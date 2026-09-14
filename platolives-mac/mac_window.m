@@ -19,6 +19,10 @@ static void plato_mac_beep(void *context) {
 @implementation PLATOTerminalWindowController
 
 - (instancetype)initWithProfile:(NSDictionary *)profile {
+    return [self initWithProfile:profile tabbedWithWindow:nil];
+}
+
+- (instancetype)initWithProfile:(NSDictionary *)profile tabbedWithWindow:(NSWindow *)hostWindow {
     static NSPoint cascadePoint = { 40.0, 100.0 };
     NSRect frame = NSMakeRect(cascadePoint.x, cascadePoint.y, 960, 960);
     NSWindow *win = [[NSWindow alloc] initWithContentRect:frame
@@ -43,7 +47,13 @@ static void plato_mac_beep(void *context) {
         if (cascadePoint.x > 300.0) cascadePoint.x = 40.0;
         if (cascadePoint.y > 300.0) cascadePoint.y = 100.0;
 
-        [self applyProfile:profile];
+        if (hostWindow) {
+            // Join the host's tab group before first display; a tab follows the group's full-screen state, not the profile's
+            [hostWindow addTabbedWindow:win ordered:NSWindowAbove];
+            [self applyProfile:profile syncFullScreen:NO];
+        } else {
+            [self applyProfile:profile];
+        }
     }
     return self;
 }
@@ -67,6 +77,10 @@ static void plato_mac_beep(void *context) {
 }
 
 - (void)applyProfile:(NSDictionary *)p {
+    [self applyProfile:p syncFullScreen:YES];
+}
+
+- (void)applyProfile:(NSDictionary *)p syncFullScreen:(BOOL)syncFullScreen {
     if (!p) return;
     _currentProfile = [p copy];
 
@@ -89,6 +103,7 @@ static void plato_mac_beep(void *context) {
     NSString *name = p[@"name"] ? p[@"name"] : @"PLATO";
     [self.window setTitle:[NSString stringWithFormat:@"PlatoLives - %@ (%@:%d)", name, host, port]];
     [self.window makeKeyAndOrderFront:nil];
+    if (!syncFullScreen) return;
 
     BOOL wantFull = [p[@"fullScreen"] boolValue];
     BOOL isFull = ((self.window.styleMask & NSWindowStyleMaskFullScreen) != 0);
@@ -524,6 +539,16 @@ static void plato_mac_beep(void *context) {
     return tc;
 }
 
+- (PLATOTerminalWindowController *)openNewTabWithProfile:(NSDictionary *)profile {
+    NSWindow *host = [self activeTerminalController].window;
+    if (!host) return [self openNewWindowWithProfile:profile];
+    PLATOTerminalWindowController *tc = [[PLATOTerminalWindowController alloc] initWithProfile:profile tabbedWithWindow:host];
+    tc.appDelegate = self;
+    [self.terminalControllers addObject:tc];
+    [tc.window makeKeyAndOrderFront:nil];
+    return tc;
+}
+
 - (void)terminalWindowControllerWillClose:(PLATOTerminalWindowController *)controller {
     [self.terminalControllers removeObject:controller];
     if ([self.terminalControllers count] == 0) {
@@ -574,6 +599,10 @@ static void plato_mac_beep(void *context) {
     NSMenuItem *newWinItem = [[NSMenuItem alloc] initWithTitle:@"New Window" action:@selector(newWindow:) keyEquivalent:@"n"];
     [newWinItem setTarget:self];
     [fileMenu addItem:newWinItem];
+
+    NSMenuItem *newTabItem = [[NSMenuItem alloc] initWithTitle:@"New Tab" action:@selector(newWindowForTab:) keyEquivalent:@"t"];
+    [newTabItem setTarget:self];
+    [fileMenu addItem:newTabItem];
 
     NSMenuItem *newWinProfItem = [[NSMenuItem alloc] initWithTitle:@"New Window with Profile" action:nil keyEquivalent:@""];
     self.profileNewWindowSubmenu = [[NSMenu alloc] initWithTitle:@"New Window with Profile"];
@@ -908,6 +937,12 @@ static void plato_mac_beep(void *context) {
 - (void)newWindow:(id)sender {
     NSDictionary *defProf = [PLATOProfileManager defaultProfile];
     [self openNewWindowWithProfile:defProf];
+}
+
+// Also sent by the tab bar's "+" button, which AppKit shows only when this action is implemented
+- (void)newWindowForTab:(id)sender {
+    NSDictionary *defProf = [PLATOProfileManager defaultProfile];
+    [self openNewTabWithProfile:defProf];
 }
 
 - (void)newWindowWithProfileItem:(id)sender {
