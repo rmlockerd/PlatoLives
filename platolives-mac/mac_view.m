@@ -38,6 +38,7 @@ NSString *PLATOKeyboardReferenceText(void) {
            @"DIVIDE (/)    Ctrl+G / Option+G\n\n"
            @"APPLICATION SHORTCUTS\n\n"
            @"NEW WINDOW    Cmd+N\n"
+           @"NEW TAB       Cmd+T\n"
            @"CLOSE WINDOW  Cmd+W\n"
            @"PROFILES      Cmd+,\n"
            @"COPY SCREEN   Cmd+C\n"
