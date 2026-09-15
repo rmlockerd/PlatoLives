@@ -724,6 +724,22 @@ static void plato_mac_beep(void *context) {
     [windowMenu addItemWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
     [windowMenu addItemWithTitle:@"Zoom" action:@selector(performZoom:) keyEquivalent:@""];
     [windowMenu addItem:[NSMenuItem separatorItem]];
+
+    // Tab navigation: Cmd+[ / ] use AppKit's own tab actions; Cmd+1..9 jump to a tab position
+    [windowMenu addItemWithTitle:@"Show Previous Tab" action:@selector(selectPreviousTab:) keyEquivalent:@"["];
+    [windowMenu addItemWithTitle:@"Show Next Tab" action:@selector(selectNextTab:) keyEquivalent:@"]"];
+
+    NSMenuItem *selectTabItem = [[NSMenuItem alloc] initWithTitle:@"Select Tab" action:nil keyEquivalent:@""];
+    NSMenu *selectTabMenu = [[NSMenu alloc] initWithTitle:@"Select Tab"];
+    for (NSInteger pos = 1; pos <= 9; pos++) {
+        NSString *title = (pos == 9) ? @"Last Tab" : [NSString stringWithFormat:@"Tab %ld", (long)pos];
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title action:@selector(selectTabAtPosition:) keyEquivalent:[NSString stringWithFormat:@"%ld", (long)pos]];
+        [item setTarget:self]; [item setTag:pos];
+        [selectTabMenu addItem:item];
+    }
+    [selectTabItem setSubmenu:selectTabMenu];
+    [windowMenu addItem:selectTabItem];
+    [windowMenu addItem:[NSMenuItem separatorItem]];
     [windowMenu addItemWithTitle:@"Bring All to Front" action:@selector(arrangeInFront:) keyEquivalent:@""];
     [windowMenuItem setSubmenu:windowMenu]; [mainMenu addItem:windowMenuItem];
     [NSApp setWindowsMenu:windowMenu];
@@ -970,6 +986,18 @@ static void plato_mac_beep(void *context) {
 - (void)newWindowForTab:(id)sender {
     NSDictionary *defProf = [PLATOProfileManager defaultProfile];
     [self openNewTabWithProfile:defProf];
+}
+
+// Cmd+1..Cmd+8 select that tab position, Cmd+9 the last tab. The items stay enabled even past the
+// tab count: a disabled item would let the keystroke fall through to PLATOView and type a digit.
+- (void)selectTabAtPosition:(id)sender {
+    NSWindow *win = [self activeTerminalController].window;
+    if (!win) return;
+    NSArray<NSWindow *> *tabs = win.tabbedWindows ? win.tabbedWindows : @[win];
+    NSInteger pos = [(NSMenuItem *)sender tag];
+    NSInteger idx = (pos == 9) ? (NSInteger)[tabs count] - 1 : pos - 1;
+    if (idx < 0 || idx >= (NSInteger)[tabs count]) return;
+    [tabs[idx] makeKeyAndOrderFront:nil];
 }
 
 - (void)newWindowWithProfileItem:(id)sender {
