@@ -31,6 +31,7 @@
 
 - (void)newWindow:(id)sender;
 - (void)newWindowForTab:(id)sender;
+- (void)selectTabAtPosition:(id)sender;
 - (void)newWindowWithProfileItem:(id)sender;
 - (void)activeWindowDidChange:(PLATOTerminalWindowController *)controller;
 
