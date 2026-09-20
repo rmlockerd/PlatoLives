@@ -4,6 +4,7 @@
 @interface PLATOTestRunner ()
 @property (nonatomic, weak) PLATOView *view;
 @property (nonatomic, copy) NSString *scriptPath;
+@property (nonatomic, copy) NSString *rawScript;
 @property (nonatomic, strong) NSArray<NSDictionary *> *commands;
 @property (nonatomic) NSUInteger index;
 @property (nonatomic, copy) NSString *screenshotsDirectory;
@@ -11,6 +12,12 @@
 @end
 
 @implementation PLATOTestRunner
+
+- (instancetype)initWithView:(PLATOView *)view scriptString:(NSString *)scriptText {
+    self = [super init];
+    if (self) { _view = view; _rawScript = [scriptText copy]; }
+    return self;
+}
 
 - (instancetype)initWithView:(PLATOView *)view scriptPath:(NSString *)path {
     self = [super init];
@@ -28,10 +35,12 @@
 - (void)fail:(NSString *)message line:(NSNumber *)line {
     NSNumber *lineNumber = line ? line : @0;
     [self log:[NSString stringWithFormat:@"ERROR line %@: %@", lineNumber, message]];
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
-        [NSApp terminate:nil];
-        exit(1);
-    });
+    if (self.scriptPath) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 100 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+            [NSApp terminate:nil];
+            exit(1);
+        });
+    }
 }
 
 - (NSArray<NSDictionary *> *)parse:(NSString *)text error:(NSString **)error {
@@ -65,27 +74,42 @@
 }
 
 - (void)start {
-    NSError *readError = nil;
-    NSString *text = [NSString stringWithContentsOfFile:self.scriptPath encoding:NSUTF8StringEncoding error:&readError];
-    if (!text) { NSLog(@"[TEST] ERROR: %@", [readError localizedDescription]); [NSApp terminate:nil]; return; }
-    NSString *base = [self.scriptPath stringByDeletingLastPathComponent];
-    self.screenshotsDirectory = [base stringByAppendingPathComponent:@"screenshots"];
-    self.resultsPath = [base stringByAppendingPathComponent:@"test-results.log"];
-    [self.view setPlasmaProfilePath:[base stringByAppendingPathComponent:@"plasma-profile.log"]];
+    NSString *text = self.rawScript;
+    if (!text && self.scriptPath) {
+        NSError *readError = nil;
+        text = [NSString stringWithContentsOfFile:self.scriptPath encoding:NSUTF8StringEncoding error:&readError];
+        if (!text) { NSLog(@"[TEST] ERROR: %@", [readError localizedDescription]); [NSApp terminate:nil]; return; }
+    }
+    if (self.scriptPath) {
+        NSString *base = [self.scriptPath stringByDeletingLastPathComponent];
+        self.screenshotsDirectory = [base stringByAppendingPathComponent:@"screenshots"];
+        self.resultsPath = [base stringByAppendingPathComponent:@"test-results.log"];
+        [self.view setPlasmaProfilePath:[base stringByAppendingPathComponent:@"plasma-profile.log"]];
 
-    NSError *directoryError = nil;
-    if (![[NSFileManager defaultManager] createDirectoryAtPath:self.screenshotsDirectory
-                                  withIntermediateDirectories:YES
-                                                   attributes:nil
-                                                        error:&directoryError]) {
-        NSLog(@"[TEST] ERROR: cannot create screenshots directory: %@", [directoryError localizedDescription]);
-        [NSApp terminate:nil];
+        NSError *directoryError = nil;
+        if (![[NSFileManager defaultManager] createDirectoryAtPath:self.screenshotsDirectory
+                                      withIntermediateDirectories:YES
+                                                       attributes:nil
+                                                            error:&directoryError]) {
+            NSLog(@"[TEST] ERROR: cannot create screenshots directory: %@", [directoryError localizedDescription]);
+            [NSApp terminate:nil];
+            return;
+        }
+        [[NSData data] writeToFile:self.resultsPath atomically:YES];
+    }
+    NSString *parseError = nil;
+    self.commands = [self parse:text error:&parseError];
+    if (!self.commands) {
+        if (self.scriptPath) {
+            [self fail:parseError line:@0];
+        } else {
+            NSLog(@"[STARTUP SCRIPT] Parse error: %@", parseError);
+        }
         return;
     }
-    [[NSData data] writeToFile:self.resultsPath atomically:YES];
-    NSString *parseError = nil; self.commands = [self parse:text error:&parseError];
-    if (!self.commands) { [self fail:parseError line:@0]; return; }
-    self.index = 0; [self log:[NSString stringWithFormat:@"START %@ (%lu commands)", self.scriptPath, (unsigned long)[self.commands count]]];
+    self.index = 0;
+    NSString *tag = self.scriptPath ? self.scriptPath : @"startup_script";
+    [self log:[NSString stringWithFormat:@"START %@ (%lu commands)", tag, (unsigned long)[self.commands count]]];
     [self runNext];
 }
 

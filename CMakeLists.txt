@@ -3,9 +3,31 @@ cmake_minimum_required(VERSION 3.56)
 if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum supported macOS version" FORCE)
     set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64" CACHE STRING "macOS architectures" FORCE)
+else()
+    # Native Linux / Docker / QNAP ARM64 CLI build
+    add_executable(PlatoLives
+        src/console_main.c
+        src/console_runner.c
+    )
+
+    target_compile_options(
+        PlatoLives
+        PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -O2
+    )
+
+    target_link_libraries(
+        PlatoLives
+        plato
+        pthread
+    )
 endif()
 
-project(PlatoLives VERSION 3.7 LANGUAGES C OBJC)
+
+project(PlatoLives VERSION 3.8 LANGUAGES C OBJC)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -53,6 +75,7 @@ if(APPLE)
         platolives-mac/mac_view.m
         platolives-mac/mac_window.m
         platolives-mac/test_runner.m
+        src/console_runner.c
     )
 
     set(MACOS_RESOURCES

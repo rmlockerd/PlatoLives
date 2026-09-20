@@ -1222,6 +1222,11 @@ static void* network_worker(void *arg) {
         bool ok = plato_transport_connect(self->transport, [host UTF8String], port);
         if (ok) {
             NSLog(@"[PLATO] Connesso con successo a %@:%d", host, port);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (self.onConnectedHandler) {
+                    self.onConnectedHandler();
+                }
+            });
         } else {
             const char *err = (self->transport && self->transport->last_error[0]) ? self->transport->last_error : "Connection refused";
             NSString *errStr = [NSString stringWithUTF8String:err];
@@ -1969,6 +1974,18 @@ static void* network_worker(void *arg) {
 
 - (void)keyUp:(NSEvent *)event {
     // Gestione rilasci se necessari in futuro
+}
+
+- (void)copy:(id)sender {
+    [self copyTextToPasteboardCompact:NO];
+}
+
+- (void)paste:(id)sender {
+    NSPasteboard *pb = [NSPasteboard generalPasteboard];
+    NSString *text = [pb stringForType:NSPasteboardTypeString];
+    if (text && [text length] > 0) {
+        [self pasteText:text];
+    }
 }
 
 @end

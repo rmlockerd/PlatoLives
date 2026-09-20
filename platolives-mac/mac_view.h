@@ -43,6 +43,7 @@ typedef struct PLATOPlasmaState PLATOPlasmaState;
     CFTimeInterval paceUntil;
 }
 
+@property (nonatomic, copy) void (^onConnectedHandler)(void);
 - (void)setTerminal:(plato_terminal_t *)term;
 - (void)connectToHost:(NSString *)host port:(int)port;
 - (void)disconnect;

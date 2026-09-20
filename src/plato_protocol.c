@@ -65,9 +65,6 @@ static void plato_process_pmd(plato_terminal_t *term, const char *pmd, int len) 
     parse_pmd_item(pmd, "system", term->user_system, sizeof(term->user_system));
     parse_pmd_item(pmd, "station", term->user_station, sizeof(term->user_station));
 
-    fprintf(stderr, "[PLATO METADATA] User: %s, Group: %s, System: %s, Slot: %s\n",
-            term->user_name, term->user_group, term->user_system, term->user_station);
-
     if (term->metadata_callback) {
         term->metadata_callback(term->metadata_context,
                                term->user_name,

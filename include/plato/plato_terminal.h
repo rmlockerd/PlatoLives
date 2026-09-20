@@ -62,4 +62,8 @@ size_t plato_terminal_get_text_area(const plato_terminal_t *term,
                                     bool compact,
                                     char *out_buf, size_t max_len);
 
+const char* plato_cell_to_utf8(const plato_terminal_t *term,
+                               plato_text_cell_t cell,
+                               char tmp_buf[8]);
+
 #endif /* PLATO_TERMINAL_H */
