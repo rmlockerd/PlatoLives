@@ -14,6 +14,7 @@ typedef struct PLATOPlasmaState PLATOPlasmaState;
 @interface PLATOView : NSView {
 @public
     plato_terminal_t *terminal;
+    BOOL graphicsDisabled;
     plato_transport_t *transport;
     plato_ringbuf_t ringbuf;
     uint32_t *rgbaBuffer;
@@ -42,6 +43,7 @@ typedef struct PLATOPlasmaState PLATOPlasmaState;
     CFTimeInterval paceUntil;
 }
 
+@property (nonatomic, copy) void (^onConnectedHandler)(void);
 - (void)setTerminal:(plato_terminal_t *)term;
 - (void)connectToHost:(NSString *)host port:(int)port;
 - (void)disconnect;
@@ -52,6 +54,7 @@ typedef struct PLATOPlasmaState PLATOPlasmaState;
 - (BOOL)sendTestText:(NSString *)text error:(NSString **)error;
 - (BOOL)sendTestKey:(NSString *)name error:(NSString **)error;
 - (BOOL)saveRenderedScreenshot:(NSString *)path error:(NSString **)error;
+- (void)setDisplayNone;
 - (void)setDisplayCrisp;
 - (void)setDisplayRealPlasma;
 - (void)setDisplaySplit;
@@ -77,4 +80,9 @@ typedef struct PLATOPlasmaState PLATOPlasmaState;
 - (void)pasteText:(NSString *)text;
 - (void)cancelPaste;
 - (void)copyScreenToPasteboard;
+- (NSString *)extractTextFromCol:(int)col0 row:(int)row0 toCol:(int)col1 row:(int)row1 compact:(BOOL)compact;
+- (NSString *)extractAllTextCompact:(BOOL)compact;
+- (void)copyTextToPasteboardCompact:(BOOL)compact;
+- (BOOL)saveTextToFile:(NSString *)path fromCol:(int)col0 row:(int)row0 toCol:(int)col1 row:(int)row1 compact:(BOOL)compact error:(NSString **)error;
+- (BOOL)saveAllTextToFile:(NSString *)path compact:(BOOL)compact error:(NSString **)error;
 @end

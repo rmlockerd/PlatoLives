@@ -1140,11 +1140,13 @@ static void* network_worker(void *arg) {
         CGImageRef img = CGImageCreate(PLASMA_WIDTH, PLASMA_HEIGHT, 8, 32, PLASMA_WIDTH * 4,
                                        colorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst,
                                        provider, NULL, false, kCGRenderingIntentDefault);
-        [CATransaction begin];
-        [CATransaction setDisableActions:YES];
-        plasmaLayer.frame = platoDisplayRect(self.bounds);
-        plasmaLayer.contents = (__bridge id)img;
-        [CATransaction commit];
+        if (!graphicsDisabled) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            plasmaLayer.frame = platoDisplayRect(self.bounds);
+            plasmaLayer.contents = (__bridge id)img;
+            [CATransaction commit];
+        }
         CGImageRelease(img);
         CGDataProviderRelease(provider);
     }
@@ -1222,6 +1224,11 @@ static void* network_worker(void *arg) {
         bool ok = plato_transport_connect(self->transport, [host UTF8String], port);
         if (ok) {
             NSLog(@"[PLATO] Connesso con successo a %@:%d", host, port);
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (self.onConnectedHandler) {
+                    self.onConnectedHandler();
+                }
+            });
         } else {
             const char *err = (self->transport && self->transport->last_error[0]) ? self->transport->last_error : "Connection refused";
             NSString *errStr = [NSString stringWithUTF8String:err];
@@ -1388,14 +1395,31 @@ static void* network_worker(void *arg) {
         CGImageRef img = CGImageCreate(PLASMA_WIDTH, PLASMA_HEIGHT, 8, 32, PLASMA_WIDTH * 4,
                                        colorSpace, kCGBitmapByteOrder32Little | kCGImageAlphaNoneSkipFirst,
                                        provider, NULL, false, kCGRenderingIntentDefault);
-        [CATransaction begin];
-        [CATransaction setDisableActions:YES];
-        plasmaLayer.frame = platoDisplayRect(self.bounds);
-        plasmaLayer.contents = (__bridge id)img;
-        [CATransaction commit];
+        if (!graphicsDisabled) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            plasmaLayer.frame = platoDisplayRect(self.bounds);
+            plasmaLayer.contents = (__bridge id)img;
+            [CATransaction commit];
+        }
         CGImageRelease(img);
         CGDataProviderRelease(provider);
     }
+}
+
+- (void)setDisplayNone {
+    graphicsDisabled = YES;
+    if (fpsTimer) {
+        [fpsTimer invalidate];
+        fpsTimer = nil;
+    }
+    if (plasmaLayer) [plasmaLayer setHidden:YES];
+    if (overlayLayer) [overlayLayer setHidden:YES];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.window) {
+            [self.window orderOut:nil];
+        }
+    });
 }
 
 - (void)setDisplayCrisp {
@@ -1641,6 +1665,41 @@ static void* network_worker(void *arg) {
 
 - (void)cancelPaste {
     pasteCancelled = YES;
+}
+
+- (NSString *)extractTextFromCol:(int)col0 row:(int)row0 toCol:(int)col1 row:(int)row1 compact:(BOOL)compact {
+    if (!terminal) return @"";
+    char buf[PLATO_ROWS * (PLATO_COLS + 2) + 1];
+    size_t len = plato_terminal_get_text_area(terminal, col0, row0, col1, row1, compact ? true : false, buf, sizeof(buf));
+    if (len == 0) return @"";
+    return [NSString stringWithUTF8String:buf];
+}
+
+- (NSString *)extractAllTextCompact:(BOOL)compact {
+    return [self extractTextFromCol:0 row:0 toCol:PLATO_COLS - 1 row:PLATO_ROWS - 1 compact:compact];
+}
+
+- (void)copyTextToPasteboardCompact:(BOOL)compact {
+    NSString *text = [self extractAllTextCompact:compact];
+    if (text && [text length] > 0) {
+        NSPasteboard *pb = [NSPasteboard generalPasteboard];
+        [pb clearContents];
+        [pb setString:text forType:NSPasteboardTypeString];
+    }
+}
+
+- (BOOL)saveTextToFile:(NSString *)path fromCol:(int)col0 row:(int)row0 toCol:(int)col1 row:(int)row1 compact:(BOOL)compact error:(NSString **)error {
+    NSString *text = [self extractTextFromCol:col0 row:row0 toCol:col1 row:row1 compact:compact];
+    NSError *err = nil;
+    BOOL ok = [text writeToFile:[path stringByExpandingTildeInPath] atomically:YES encoding:NSUTF8StringEncoding error:&err];
+    if (!ok && error) {
+        *error = [err localizedDescription];
+    }
+    return ok;
+}
+
+- (BOOL)saveAllTextToFile:(NSString *)path compact:(BOOL)compact error:(NSString **)error {
+    return [self saveTextToFile:path fromCol:0 row:0 toCol:PLATO_COLS - 1 row:PLATO_ROWS - 1 compact:compact error:error];
 }
 
 - (void)copyScreenToPasteboard {
@@ -1917,6 +1976,18 @@ static void* network_worker(void *arg) {
 
 - (void)keyUp:(NSEvent *)event {
     // Gestione rilasci se necessari in futuro
+}
+
+- (void)copy:(id)sender {
+    [self copyTextToPasteboardCompact:NO];
+}
+
+- (void)paste:(id)sender {
+    NSPasteboard *pb = [NSPasteboard generalPasteboard];
+    NSString *text = [pb stringForType:NSPasteboardTypeString];
+    if (text && [text length] > 0) {
+        [self pasteText:text];
+    }
 }
 
 @end

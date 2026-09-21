@@ -65,9 +65,6 @@ static void plato_process_pmd(plato_terminal_t *term, const char *pmd, int len) 
     parse_pmd_item(pmd, "system", term->user_system, sizeof(term->user_system));
     parse_pmd_item(pmd, "station", term->user_station, sizeof(term->user_station));
 
-    fprintf(stderr, "[PLATO METADATA] User: %s, Group: %s, System: %s, Slot: %s\n",
-            term->user_name, term->user_group, term->user_system, term->user_station);
-
     if (term->metadata_callback) {
         term->metadata_callback(term->metadata_context,
                                term->user_name,
@@ -380,6 +377,7 @@ void plato_protocol_process_byte(plato_protocol_decoder_t *dec, plato_terminal_t
             case 0x0C:
                 plato_transport_log_msg(term->transport, "[CLEAR SCREEN ESC 0x0C] bg=0x%08X color=%d\n", term->fb.bg_color, term->fb.color_enabled);
                 plato_fb_clear(&term->fb); term->x = 0; term->y = 496; term->margin_x = 0;
+                plato_terminal_clear_text(term);
                 dec->char_size = 1;
                 dec->screen_mode = PLATO_SCREEN_REWRITE; dec->data_mode = PLATO_MODE_ALPHA;
                 dec->mode7_active = false; dec->mode2_active = false;
@@ -512,6 +510,7 @@ void plato_protocol_process_byte(plato_protocol_decoder_t *dec, plato_terminal_t
         int tracking = (scale > 2) ? (scale * 2 + 2) : (scale == 2 ? 0 : 0);
         int advance = (8 * scale) + tracking;
         plato_draw_char(&term->fb, &term->font, dec->charset, byte, term->x, term->y, dec->screen_mode, scale);
+        plato_terminal_put_char(term, term->x, term->y, byte, dec->charset, dec->screen_mode, scale);
         /* In Alpha PLATO l avanzamento orizzontale avvolge modulo 512 senza LF o scroll. */
         term->x += advance;
         if (term->x >= PLATO_WIDTH) term->x -= PLATO_WIDTH;

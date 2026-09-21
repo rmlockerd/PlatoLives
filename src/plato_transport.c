@@ -1,3 +1,8 @@
+#define _DARWIN_C_SOURCE
+#define _GNU_SOURCE
+#define _DEFAULT_SOURCE
+#define _POSIX_C_SOURCE 200809L
+
 #include <stdarg.h>
 #include "plato/plato_transport.h"
 #include <stdio.h>
@@ -239,6 +244,7 @@ bool plato_transport_connect(plato_transport_t *t, const char *host, int port) {
 void plato_transport_disconnect(plato_transport_t *t) {
     if (!t) return;
     if (t->socket_fd >= 0) {
+        shutdown(t->socket_fd, SHUT_RDWR);
         close(t->socket_fd);
         t->socket_fd = -1;
     }

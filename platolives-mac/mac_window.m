@@ -110,6 +110,10 @@ static void plato_mac_beep(void *context) {
     NSString *host = p[@"host"] ? p[@"host"] : @"cyberserv.org";
     int pVal = [p[@"port"] intValue];
     int port = (pVal > 0 ? pVal : 8005);
+    __weak PLATOTerminalWindowController *weakSelf = self;
+    self.view.onConnectedHandler = ^{
+        [weakSelf startStartupScriptIfNeeded];
+    };
     [self.view connectToHost:host port:port];
 
     NSString *name = p[@"name"] ? p[@"name"] : @"PLATO";
@@ -121,6 +125,16 @@ static void plato_mac_beep(void *context) {
     BOOL isFull = ((self.window.styleMask & NSWindowStyleMaskFullScreen) != 0);
     if (wantFull != isFull) {
         dispatch_async(dispatch_get_main_queue(), ^{ [self.window toggleFullScreen:nil]; });
+    }
+}
+
+- (void)startStartupScriptIfNeeded {
+    if (!self.currentProfile) return;
+    BOOL enabled = [self.currentProfile[@"startupScriptEnabled"] boolValue];
+    NSString *script = self.currentProfile[@"startupScript"];
+    if (enabled && script && [script length] > 0) {
+        PLATOTestRunner *runner = [[PLATOTestRunner alloc] initWithView:self.view scriptString:script];
+        [runner start];
     }
 }
 
@@ -178,6 +192,11 @@ static void plato_mac_beep(void *context) {
         [textView setTextColor:[NSColor colorWithCalibratedRed:1.0 green:0.48 blue:0.12 alpha:0.96]];
         [textView setFont:[NSFont monospacedSystemFontOfSize:14.0 weight:NSFontWeightRegular]];
         [textView setTextContainerInset:NSMakeSize(18.0, 18.0)];
+        [textView setContinuousSpellCheckingEnabled:NO];
+        [textView setGrammarCheckingEnabled:NO];
+        [textView setAutomaticSpellingCorrectionEnabled:NO];
+        [textView setAutomaticTextReplacementEnabled:NO];
+        [textView setAutomaticQuoteSubstitutionEnabled:NO];
         [[textView textStorage] setAttributedString:[[NSAttributedString alloc] initWithString:PLATOKeyboardReferenceText()
                                                                                    attributes:@{
             NSFontAttributeName: [NSFont monospacedSystemFontOfSize:14.0 weight:NSFontWeightRegular],
@@ -282,12 +301,15 @@ static void plato_mac_beep(void *context) {
 
 @property (nonatomic, strong) NSButton *fullscreenCheckbox;
 @property (nonatomic, strong) NSButton *defaultCheckbox;
+@property (nonatomic, strong) NSButton *scriptCheckbox;
+@property (nonatomic, strong) NSTextView *scriptTextView;
+@property (nonatomic) NSInteger currentEditingIndex;
 @end
 
 @implementation PLATOProfilesWindowController
 
 - (instancetype)init {
-    NSRect frame = NSMakeRect(0, 0, 640, 500);
+    NSRect frame = NSMakeRect(0, 0, 720, 640);
     NSWindow *win = [[NSWindow alloc] initWithContentRect:frame
                                                 styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable)
                                                   backing:NSBackingStoreBuffered defer:NO];
@@ -305,7 +327,7 @@ static void plato_mac_beep(void *context) {
 - (void)setupUI {
     NSView *content = [self.window contentView];
 
-    NSScrollView *tableScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(20, 55, 190, 420)];
+    NSScrollView *tableScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(20, 55, 190, 560)];
     [tableScroll setHasVerticalScroller:YES];
     [tableScroll setBorderType:NSBezelBorder];
 
@@ -327,35 +349,36 @@ static void plato_mac_beep(void *context) {
     [seg setFrame:NSMakeRect(20, 20, 60, 24)];
     [content addSubview:seg];
 
-    CGFloat rx = 230, rw = 380;
+    CGFloat rx = 230, rw = 450;
+    CGFloat fx = rx + 115, fw = 325;
 
     NSTextField *titleLbl = [NSTextField labelWithString:@"Profile Settings"];
     [titleLbl setFont:[NSFont boldSystemFontOfSize:14]];
-    [titleLbl setFrame:NSMakeRect(rx, 450, rw, 22)];
+    [titleLbl setFrame:NSMakeRect(rx, 595, rw, 22)];
     [content addSubview:titleLbl];
 
     NSTextField *nameLbl = [NSTextField labelWithString:@"Profile Name:"];
-    [nameLbl setFrame:NSMakeRect(rx, 420, 100, 18)];
+    [nameLbl setFrame:NSMakeRect(rx, 564, 105, 18)];
     [content addSubview:nameLbl];
-    _nameField = [[NSTextField alloc] initWithFrame:NSMakeRect(rx + 115, 418, 250, 22)];
+    _nameField = [[NSTextField alloc] initWithFrame:NSMakeRect(fx, 562, fw, 22)];
     [content addSubview:_nameField];
 
     NSTextField *hostLbl = [NSTextField labelWithString:@"Server Host:"];
-    [hostLbl setFrame:NSMakeRect(rx, 385, 100, 18)];
+    [hostLbl setFrame:NSMakeRect(rx, 531, 105, 18)];
     [content addSubview:hostLbl];
-    _hostField = [[NSTextField alloc] initWithFrame:NSMakeRect(rx + 115, 383, 250, 22)];
+    _hostField = [[NSTextField alloc] initWithFrame:NSMakeRect(fx, 529, fw, 22)];
     [content addSubview:_hostField];
 
     NSTextField *portLbl = [NSTextField labelWithString:@"Port:"];
-    [portLbl setFrame:NSMakeRect(rx, 350, 100, 18)];
+    [portLbl setFrame:NSMakeRect(rx, 498, 105, 18)];
     [content addSubview:portLbl];
-    _portField = [[NSTextField alloc] initWithFrame:NSMakeRect(rx + 115, 348, 100, 22)];
+    _portField = [[NSTextField alloc] initWithFrame:NSMakeRect(fx, 496, 100, 22)];
     [content addSubview:_portField];
 
     NSTextField *modeLbl = [NSTextField labelWithString:@"Display Mode:"];
-    [modeLbl setFrame:NSMakeRect(rx, 310, 100, 18)];
+    [modeLbl setFrame:NSMakeRect(rx, 460, 105, 18)];
     [content addSubview:modeLbl];
-    _modePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(rx + 115, 307, 250, 25) pullsDown:NO];
+    _modePopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fx, 457, fw, 25) pullsDown:NO];
     [_modePopup addItemsWithTitles:@[@"Real Plasma", @"Crisp Monochrome", @"Split Monochrome", @"Crisp Color", @"Real Color CRT"]];
     [_modePopup setTarget:self];
     [_modePopup setAction:@selector(onModeChanged:)];
@@ -363,57 +386,75 @@ static void plato_mac_beep(void *context) {
 
     // --- Controlli Real Plasma ---
     _decayLbl = [NSTextField labelWithString:@"Persistence:"];
-    [_decayLbl setFrame:NSMakeRect(rx, 270, 110, 18)];
+    [_decayLbl setFrame:NSMakeRect(rx, 422, 105, 18)];
     [content addSubview:_decayLbl];
-    _decayPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(rx + 115, 267, 250, 25) pullsDown:NO];
+    _decayPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fx, 419, fw, 25) pullsDown:NO];
     [_decayPopup addItemsWithTitles:@[@"100 ms (Authentic Plasma)", @"200 ms (Warm Glow)", @"500 ms (Medium)", @"1000 ms (Long/Radar)", @"2000 ms (Ultra Persistence)", @"5000 ms (5s Extreme)"]];
     [content addSubview:_decayPopup];
 
-    // Distorsione per Real Plasma a tutto schermo (y=230)
     _plasmaDistortionLbl = [NSTextField labelWithString:@"Distortion:"];
-    [_plasmaDistortionLbl setFrame:NSMakeRect(rx, 230, 110, 18)];
+    [_plasmaDistortionLbl setFrame:NSMakeRect(rx, 384, 105, 18)];
     [content addSubview:_plasmaDistortionLbl];
-    _plasmaDistortionPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(rx + 115, 227, 250, 25) pullsDown:NO];
+    _plasmaDistortionPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fx, 381, fw, 25) pullsDown:NO];
     [_plasmaDistortionPopup addItemsWithTitles:@[@"None (Flat)", @"Barrel (Curved Glass)", @"Cylindrical"]];
     [content addSubview:_plasmaDistortionPopup];
 
     // --- Controlli Real Color CRT ---
     _crtBeamLbl = [NSTextField labelWithString:@"CRT Beam:"];
-    [_crtBeamLbl setFrame:NSMakeRect(rx, 270, 110, 18)];
+    [_crtBeamLbl setFrame:NSMakeRect(rx, 422, 105, 18)];
     [content addSubview:_crtBeamLbl];
-    _crtBeamPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(rx + 115, 267, 250, 25) pullsDown:NO];
+    _crtBeamPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fx, 419, fw, 25) pullsDown:NO];
     [_crtBeamPopup addItemsWithTitles:@[@"Standard (Authentic 13\")", @"High (Soft Glow)", @"Ultra (Vintage Arcade)"]];
     [content addSubview:_crtBeamPopup];
 
     _crtDecayLbl = [NSTextField labelWithString:@"CRT Persistence:"];
-    [_crtDecayLbl setFrame:NSMakeRect(rx, 230, 110, 18)];
+    [_crtDecayLbl setFrame:NSMakeRect(rx, 384, 105, 18)];
     [content addSubview:_crtDecayLbl];
-    _crtDecayPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(rx + 115, 227, 250, 25) pullsDown:NO];
+    _crtDecayPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fx, 381, fw, 25) pullsDown:NO];
     [_crtDecayPopup addItemsWithTitles:@[@"20 ms (Default CRT)", @"200 ms (Warm Glow)", @"500 ms (Medium)", @"1000 ms (Long/Radar)", @"2000 ms (Ultra Persistence)", @"5000 ms (5s Extreme)"]];
     [content addSubview:_crtDecayPopup];
 
     _crtDistortionLbl = [NSTextField labelWithString:@"CRT Distortion:"];
-    [_crtDistortionLbl setFrame:NSMakeRect(rx, 190, 110, 18)];
+    [_crtDistortionLbl setFrame:NSMakeRect(rx, 346, 105, 18)];
     [content addSubview:_crtDistortionLbl];
-    _crtDistortionPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(rx + 115, 187, 250, 25) pullsDown:NO];
+    _crtDistortionPopup = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(fx, 343, fw, 25) pullsDown:NO];
     [_crtDistortionPopup addItemsWithTitles:@[@"None (Flat)", @"Barrel (Curved Glass)", @"Cylindrical"]];
     [content addSubview:_crtDistortionPopup];
 
     _fullscreenCheckbox = [NSButton checkboxWithTitle:@"Launch in Full Screen" target:nil action:nil];
-    [_fullscreenCheckbox setFrame:NSMakeRect(rx + 115, 145, 240, 20)];
+    [_fullscreenCheckbox setFrame:NSMakeRect(fx, 312, 240, 18)];
     [content addSubview:_fullscreenCheckbox];
 
     _defaultCheckbox = [NSButton checkboxWithTitle:@"Default profile at startup" target:nil action:nil];
-    [_defaultCheckbox setFrame:NSMakeRect(rx + 115, 115, 240, 20)];
+    [_defaultCheckbox setFrame:NSMakeRect(fx, 288, 240, 18)];
     [content addSubview:_defaultCheckbox];
 
-    NSButton *saveBtn = [[NSButton alloc] initWithFrame:NSMakeRect(rx + 140, 20, 100, 28)];
+    _scriptCheckbox = [NSButton checkboxWithTitle:@"Run Startup Script on connect" target:nil action:nil];
+    [_scriptCheckbox setFrame:NSMakeRect(fx, 260, 260, 18)];
+    [content addSubview:_scriptCheckbox];
+
+    NSScrollView *scriptScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(fx, 65, fw, 185)];
+    [scriptScroll setHasVerticalScroller:YES];
+    [scriptScroll setBorderType:NSBezelBorder];
+    _scriptTextView = [[NSTextView alloc] initWithFrame:[scriptScroll bounds]];
+    [_scriptTextView setFont:[NSFont monospacedSystemFontOfSize:11 weight:NSFontWeightRegular]];
+    [_scriptTextView setEditable:YES];
+    [_scriptTextView setSelectable:YES];
+    [_scriptTextView setRichText:NO];
+    [_scriptTextView setAllowsUndo:YES];
+    [_scriptTextView setAutomaticQuoteSubstitutionEnabled:NO];
+    [_scriptTextView setAutomaticDashSubstitutionEnabled:NO];
+    [_scriptTextView setAutomaticSpellingCorrectionEnabled:NO];
+    [scriptScroll setDocumentView:_scriptTextView];
+    [content addSubview:scriptScroll];
+
+    NSButton *saveBtn = [[NSButton alloc] initWithFrame:NSMakeRect(rx + 185, 18, 110, 30)];
     [saveBtn setTitle:@"Save"];
     [saveBtn setTarget:self];
     [saveBtn setAction:@selector(onSave:)];
     [content addSubview:saveBtn];
 
-    NSButton *connBtn = [[NSButton alloc] initWithFrame:NSMakeRect(rx + 250, 20, 120, 28)];
+    NSButton *connBtn = [[NSButton alloc] initWithFrame:NSMakeRect(rx + 305, 18, 135, 30)];
     [connBtn setTitle:@"Connect Now"];
     [connBtn setKeyEquivalent:[NSString stringWithFormat:@"%c", 13]];
     [connBtn setTarget:self];
@@ -422,8 +463,11 @@ static void plato_mac_beep(void *context) {
 
     [_tableView reloadData];
     if ([_profiles count] > 0) {
+        self.currentEditingIndex = 0;
         [_tableView selectRowIndexes:[NSIndexSet indexSetWithIndex:0] byExtendingSelection:NO];
         [self loadProfileToForm:_profiles[0]];
+    } else {
+        self.currentEditingIndex = -1;
     }
 }
 
@@ -468,6 +512,7 @@ static void plato_mac_beep(void *context) {
 - (void)tableViewSelectionDidChange:(NSNotification *)notification {
     NSInteger sel = [self.tableView selectedRow];
     if (sel >= 0 && sel < (NSInteger)[self.profiles count]) {
+        self.currentEditingIndex = sel;
         [self loadProfileToForm:self.profiles[sel]];
     }
 }
@@ -519,10 +564,28 @@ static void plato_mac_beep(void *context) {
 
     [self.fullscreenCheckbox setState:[p[@"fullScreen"] boolValue] ? NSControlStateValueOn : NSControlStateValueOff];
     [self.defaultCheckbox setState:[p[@"isDefault"] boolValue] ? NSControlStateValueOn : NSControlStateValueOff];
+    BOOL scriptOn = [p[@"startupScriptEnabled"] boolValue];
+    [self.scriptCheckbox setState:scriptOn ? NSControlStateValueOn : NSControlStateValueOff];
+    NSString *scriptText = p[@"startupScript"];
+    if (!scriptText || [scriptText length] == 0) {
+        scriptText = @"wait 2s\n"
+                     @"key NEXT\n"
+                     @"wait 5s\n"
+                     @"send user\n"
+                     @"key NEXT\n"
+                     @"wait 3s\n"
+                     @"send group\n"
+                     @"key SHIFT-STOP\n"
+                     @"wait 3s\n"
+                     @"send password\n"
+                     @"wait 1s\n"
+                     @"key NEXT";
+    }
+    [self.scriptTextView setString:scriptText];
 }
 
 - (void)saveCurrentFormToProfile {
-    NSInteger sel = [self.tableView selectedRow];
+    NSInteger sel = self.currentEditingIndex;
     if (sel < 0 || sel >= (NSInteger)[self.profiles count]) return;
     NSMutableDictionary *p = self.profiles[sel];
     p[@"name"] = [self.nameField stringValue];
@@ -563,6 +626,8 @@ static void plato_mac_beep(void *context) {
     p[@"crtDistortion"] = @([self.crtDistortionPopup indexOfSelectedItem]);
 
     p[@"fullScreen"] = @([self.fullscreenCheckbox state] == NSControlStateValueOn);
+    p[@"startupScriptEnabled"] = @([self.scriptCheckbox state] == NSControlStateValueOn);
+    p[@"startupScript"] = [self.scriptTextView string];
     BOOL isDef = ([self.defaultCheckbox state] == NSControlStateValueOn);
     p[@"isDefault"] = @(isDef);
 
@@ -584,7 +649,7 @@ static void plato_mac_beep(void *context) {
 
 - (void)onConnectNow:(id)sender {
     [self onSave:sender];
-    NSInteger sel = [self.tableView selectedRow];
+    NSInteger sel = self.currentEditingIndex;
     if (sel >= 0 && sel < (NSInteger)[self.profiles count]) {
         NSDictionary *p = [self.profiles[sel] copy];
         [self close];
@@ -633,9 +698,236 @@ static void plato_mac_beep(void *context) {
 }
 @end
 
+
+@interface PLATOTextBufferWindowController : NSWindowController <NSWindowDelegate, NSTextViewDelegate>
+@property (nonatomic, weak) PLATOAppDelegate *appDelegate;
+@property (nonatomic, strong) NSTextView *textView;
+@property (nonatomic, strong) NSButton *compactCheckbox;
+@property (nonatomic, strong) NSTextField *statusLabel;
+@property (nonatomic, strong) NSTimer *refreshTimer;
+@property (nonatomic) BOOL isFrozen;
+@property (nonatomic, copy) NSString *lastText;
+
+- (void)updateContentFromTerminal;
+- (void)onCopy:(id)sender;
+- (void)showAndFocus;
+@end
+
+@implementation PLATOTextBufferWindowController
+
+- (instancetype)init {
+    NSRect frame = NSMakeRect(0, 0, 560, 550);
+    NSWindow *win = [[NSWindow alloc] initWithContentRect:frame
+                                                styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                                                           NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable)
+                                                  backing:NSBackingStoreBuffered defer:NO];
+    [win setTitle:@"PLATO Live Text Buffer [● LIVE]"];
+    [win setAppearance:[NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]];
+    [win center];
+
+    self = [super initWithWindow:win];
+    if (self) {
+        [win setDelegate:self];
+        _isFrozen = NO;
+        _lastText = @"";
+
+        NSView *content = [win contentView];
+        NSRect contentBounds = [content bounds];
+
+        NSRect barRect = NSMakeRect(0, 0, contentBounds.size.width, 44);
+        NSView *bottomBar = [[NSView alloc] initWithFrame:barRect];
+        [bottomBar setAutoresizingMask:NSViewWidthSizable | NSViewMaxYMargin];
+        [bottomBar setWantsLayer:YES];
+        bottomBar.layer.backgroundColor = [NSColor colorWithCalibratedRed:0.04 green:0.015 blue:0.005 alpha:1.0].CGColor;
+        bottomBar.layer.borderWidth = 1.0;
+        bottomBar.layer.borderColor = [NSColor colorWithCalibratedRed:0.25 green:0.10 blue:0.03 alpha:1.0].CGColor;
+        [content addSubview:bottomBar];
+
+        NSDictionary *btnTextAttrs = @{
+            NSForegroundColorAttributeName: [NSColor colorWithCalibratedRed:1.0 green:0.85 blue:0.4 alpha:1.0],
+            NSFontAttributeName: [NSFont systemFontOfSize:12.0 weight:NSFontWeightMedium]
+        };
+        NSAttributedString *(^makeBtnTitle)(NSString *) = ^(NSString *title) {
+            return [[NSAttributedString alloc] initWithString:title attributes:btnTextAttrs];
+        };
+
+        NSButton *selAllBtn = [[NSButton alloc] initWithFrame:NSMakeRect(10, 10, 80, 24)];
+        [selAllBtn setBezelStyle:NSBezelStyleRounded];
+        [selAllBtn setBezelColor:[NSColor colorWithCalibratedRed:0.18 green:0.08 blue:0.03 alpha:1.0]];
+        [selAllBtn setAttributedTitle:makeBtnTitle(@"Select All")];
+        [selAllBtn setTarget:self];
+        [selAllBtn setAction:@selector(onSelectAll:)];
+        [bottomBar addSubview:selAllBtn];
+
+        NSButton *selNoneBtn = [[NSButton alloc] initWithFrame:NSMakeRect(96, 10, 114, 24)];
+        [selNoneBtn setBezelStyle:NSBezelStyleRounded];
+        [selNoneBtn setBezelColor:[NSColor colorWithCalibratedRed:0.18 green:0.08 blue:0.03 alpha:1.0]];
+        [selNoneBtn setAttributedTitle:makeBtnTitle(@"Deselect / Live")];
+        [selNoneBtn setTarget:self];
+        [selNoneBtn setAction:@selector(onSelectNone:)];
+        [bottomBar addSubview:selNoneBtn];
+
+        _compactCheckbox = [NSButton checkboxWithTitle:@"Compact" target:nil action:nil];
+        [_compactCheckbox setFrame:NSMakeRect(216, 11, 80, 22)];
+        [_compactCheckbox setAttributedTitle:makeBtnTitle(@"Compact")];
+        [bottomBar addSubview:_compactCheckbox];
+
+        NSButton *copyBtn = [[NSButton alloc] initWithFrame:NSMakeRect(302, 10, 140, 24)];
+        [copyBtn setBezelStyle:NSBezelStyleRounded];
+        [copyBtn setBezelColor:[NSColor colorWithCalibratedRed:0.32 green:0.14 blue:0.04 alpha:1.0]];
+        [copyBtn setAttributedTitle:makeBtnTitle(@"Copy to Clipboard")];
+        [copyBtn setTarget:self];
+        [copyBtn setAction:@selector(onCopy:)];
+        [bottomBar addSubview:copyBtn];
+
+        _statusLabel = [NSTextField labelWithString:@"[● LIVE]"];
+        [_statusLabel setFont:[NSFont boldSystemFontOfSize:11.5]];
+        [_statusLabel setTextColor:[NSColor colorWithCalibratedRed:0.2 green:0.9 blue:0.3 alpha:1.0]];
+        [_statusLabel setAlignment:NSTextAlignmentRight];
+        [_statusLabel setFrame:NSMakeRect(barRect.size.width - 108, 12, 98, 20)];
+        [_statusLabel setAutoresizingMask:NSViewMinXMargin];
+        [bottomBar addSubview:_statusLabel];
+
+        NSRect scrollRect = NSMakeRect(0, 44, contentBounds.size.width, contentBounds.size.height - 44);
+        NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:scrollRect];
+        [scroll setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+        [scroll setHasVerticalScroller:YES];
+        [scroll setHasHorizontalScroller:NO];
+        [scroll setBorderType:NSNoBorder];
+
+        _textView = [[NSTextView alloc] initWithFrame:[scroll bounds]];
+        [_textView setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+        [_textView setHorizontallyResizable:NO];
+        [_textView setVerticallyResizable:YES];
+        [[_textView textContainer] setWidthTracksTextView:YES];
+        [_textView setEditable:NO];
+        [_textView setSelectable:YES];
+        [_textView setDrawsBackground:YES];
+        [_textView setBackgroundColor:[NSColor colorWithCalibratedRed:0.035 green:0.010 blue:0.003 alpha:1.0]];
+        [_textView setTextColor:[NSColor colorWithCalibratedRed:1.0 green:0.55 blue:0.12 alpha:0.96]];
+        [_textView setFont:[NSFont monospacedSystemFontOfSize:12.5 weight:NSFontWeightRegular]];
+        [_textView setTextContainerInset:NSMakeSize(10.0, 10.0)];
+        [_textView setDelegate:self];
+        [_textView setContinuousSpellCheckingEnabled:NO];
+        [_textView setGrammarCheckingEnabled:NO];
+        [scroll setDocumentView:_textView];
+        [content addSubview:scroll];
+
+        __weak __typeof__(self) weakSelf = self;
+        _refreshTimer = [NSTimer scheduledTimerWithTimeInterval:0.10 repeats:YES block:^(NSTimer * _Nonnull timer) {
+            (void)timer;
+            [weakSelf updateContentFromTerminal];
+        }];
+    }
+    return self;
+}
+
+- (void)updateStatusLabel {
+    if (self.isFrozen) {
+        [self.statusLabel setStringValue:@"[⏸ FROZEN]"];
+        [self.statusLabel setTextColor:[NSColor colorWithCalibratedRed:1.0 green:0.75 blue:0.1 alpha:1.0]];
+        [self.window setTitle:@"PLATO Live Text Buffer [⏸ FROZEN]"];
+    } else {
+        [self.statusLabel setStringValue:@"[● LIVE]"];
+        [self.statusLabel setTextColor:[NSColor colorWithCalibratedRed:0.2 green:0.9 blue:0.3 alpha:1.0]];
+        [self.window setTitle:@"PLATO Live Text Buffer [● LIVE]"];
+    }
+}
+
+- (void)textViewDidChangeSelection:(NSNotification *)notification {
+    (void)notification;
+    NSRange range = [self.textView selectedRange];
+    if (range.length > 0) {
+        if (!self.isFrozen) {
+            self.isFrozen = YES;
+            [self updateStatusLabel];
+        }
+    }
+}
+
+- (void)onSelectAll:(id)sender {
+    (void)sender;
+    self.isFrozen = YES;
+    [self updateStatusLabel];
+    [self.textView selectAll:nil];
+}
+
+- (void)onSelectNone:(id)sender {
+    (void)sender;
+    [self.textView setSelectedRange:NSMakeRange(0, 0)];
+    self.isFrozen = NO;
+    [self updateStatusLabel];
+    [self updateContentFromTerminal];
+}
+
+- (void)onCopy:(id)sender {
+    (void)sender;
+    NSString *rawText = nil;
+    NSRange range = [self.textView selectedRange];
+    if (range.length > 0) {
+        rawText = [[self.textView string] substringWithRange:range];
+    } else {
+        rawText = [self.textView string];
+    }
+
+    if (!rawText || [rawText length] == 0) return;
+
+    NSString *toCopy = rawText;
+    if ([self.compactCheckbox state] == NSControlStateValueOn) {
+        NSArray<NSString *> *lines = [rawText componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
+        NSMutableArray<NSString *> *compactedLines = [NSMutableArray array];
+        for (NSString *line in lines) {
+            NSString *trimmed = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if ([trimmed length] == 0) continue;
+            NSError *err = nil;
+            NSRegularExpression *regex = [NSRegularExpression regularExpressionWithPattern:@"[ \\t]+" options:0 error:&err];
+            NSString *collapsed = [regex stringByReplacingMatchesInString:trimmed options:0 range:NSMakeRange(0, [trimmed length]) withTemplate:@" "];
+            [compactedLines addObject:collapsed];
+        }
+        toCopy = [compactedLines componentsJoinedByString:@"\n"];
+    }
+
+    NSPasteboard *pb = [NSPasteboard generalPasteboard];
+    [pb clearContents];
+    [pb setString:toCopy forType:NSPasteboardTypeString];
+}
+
+- (void)updateContentFromTerminal {
+    if (self.isFrozen || ![self.window isVisible]) return;
+    if (!self.appDelegate) return;
+    PLATOView *v = self.appDelegate.view;
+    if (!v) return;
+
+    NSString *text = [v extractAllTextCompact:NO];
+    if (!text) text = @"";
+    if (![text isEqualToString:self.lastText]) {
+        self.lastText = text;
+        [self.textView setString:text];
+    }
+}
+
+- (void)showAndFocus {
+    [self updateContentFromTerminal];
+    [self showWindow:nil];
+    [self.window makeKeyAndOrderFront:nil];
+}
+
+- (void)windowWillClose:(NSNotification *)notification {
+    (void)notification;
+    self.isFrozen = NO;
+    [self updateStatusLabel];
+}
+
+- (void)dealloc {
+    [_refreshTimer invalidate];
+}
+
+@end
+
 @interface PLATOAppDelegate () <PLATOProfilesDelegate>
 @property (nonatomic, strong) NSMutableArray<PLATOTerminalWindowController *> *terminalControllers;
 @property (nonatomic, strong) PLATOKeymapWindowController *keymapController;
+@property (nonatomic, strong) PLATOTextBufferWindowController *textBufferController;
 @property (nonatomic, strong) PLATOProfilesWindowController *profilesController;
 @property (nonatomic, strong) NSMenu *connectionSubmenu;
 @property (nonatomic, strong) NSMenu *profileNewWindowSubmenu;
@@ -784,19 +1076,39 @@ static void plato_mac_beep(void *context) {
     [fileMenuItem setSubmenu:fileMenu];
     [mainMenu addItem:fileMenuItem];
 
-    // Menu Edit
+    // Menu Edit standard macOS (First Responder per editor di testo e terminale)
     NSMenuItem *editMenuItem = [[NSMenuItem alloc] init];
     NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
 
-    NSMenuItem *copyItem = [[NSMenuItem alloc] initWithTitle:@"Copy Screen" action:@selector(copyScreen:) keyEquivalent:@"c"];
-    [copyItem setTarget:self];
-    [editMenu addItem:copyItem];
+    NSMenuItem *undoItem = [[NSMenuItem alloc] initWithTitle:@"Undo" action:@selector(undo:) keyEquivalent:@"z"];
+    [editMenu addItem:undoItem];
 
-    NSMenuItem *pasteItem = [[NSMenuItem alloc] initWithTitle:@"Paste" action:@selector(pasteText:) keyEquivalent:@"v"];
-    [pasteItem setTarget:self];
-    [editMenu addItem:pasteItem];
+    NSMenuItem *redoItem = [[NSMenuItem alloc] initWithTitle:@"Redo" action:@selector(redo:) keyEquivalent:@"Z"];
+    [editMenu addItem:redoItem];
 
     [editMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem *cutItem = [[NSMenuItem alloc] initWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+    [editMenu addItem:cutItem];
+
+    NSMenuItem *copyItem = [[NSMenuItem alloc] initWithTitle:@"Copy" action:@selector(copy:) keyEquivalent:@"c"];
+    [editMenu addItem:copyItem];
+
+    NSMenuItem *pasteItem = [[NSMenuItem alloc] initWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+    [editMenu addItem:pasteItem];
+
+    NSMenuItem *selAllItem = [[NSMenuItem alloc] initWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+    [editMenu addItem:selAllItem];
+
+    [editMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem *copyScreenItem = [[NSMenuItem alloc] initWithTitle:@"Copy Screen Image" action:@selector(copyScreenImage:) keyEquivalent:@"C"];
+    [copyScreenItem setTarget:self];
+    [editMenu addItem:copyScreenItem];
+
+    NSMenuItem *liveTextItem = [[NSMenuItem alloc] initWithTitle:@"Show Live Text Buffer..." action:@selector(copyTextAction:) keyEquivalent:@"l"];
+    [liveTextItem setTarget:self];
+    [editMenu addItem:liveTextItem];
 
     NSMenuItem *cancelPasteItem = [[NSMenuItem alloc] initWithTitle:@"Cancel Paste" action:@selector(cancelPaste:) keyEquivalent:@"."];
     [cancelPasteItem setTarget:self];
@@ -953,6 +1265,9 @@ static void plato_mac_beep(void *context) {
     // Menu Tools
     NSMenuItem *toolsMenuItem = [[NSMenuItem alloc] init];
     NSMenu *toolsMenu = [[NSMenu alloc] initWithTitle:@"Tools"];
+    NSMenuItem *textBufferItem = [[NSMenuItem alloc] initWithTitle:@"Show Live Text Buffer" action:@selector(showTextBufferWindow:) keyEquivalent:@"t"];
+    [textBufferItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand | NSEventModifierFlagShift];
+    [textBufferItem setTarget:self]; [toolsMenu addItem:textBufferItem];
     NSMenuItem *logItem = [[NSMenuItem alloc] initWithTitle:@"Enable Diagnostic Log" action:@selector(toggleTrafficLog:) keyEquivalent:@""];
     [logItem setTarget:self]; [toolsMenu addItem:logItem];
     NSMenuItem *rendererLogItem = [[NSMenuItem alloc] initWithTitle:@"Enable Renderer Performance Log" action:@selector(toggleRendererPerformanceLog:) keyEquivalent:@""];
@@ -1026,32 +1341,42 @@ static void plato_mac_beep(void *context) {
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
+    NSArray<NSString *> *arguments = [[NSProcessInfo processInfo] arguments];
+    NSUInteger testIndex = [arguments indexOfObject:@"--test-script"];
+    BOOL isHeadlessTest = (testIndex != NSNotFound);
+
     [self setupMenuBar];
     [self setupDockIcon];
     [self setupStatusItem];
 
-    self.keymapController = [[PLATOKeymapWindowController alloc] init];
-    __weak PLATOAppDelegate *weakSelf = self;
-    self.keymapController.closeHandler = ^{ weakSelf.keyboardReferenceEnabled = NO; [weakSelf applyKeyboardReferencePresentation]; };
+    if (!isHeadlessTest) {
+        self.keymapController = [[PLATOKeymapWindowController alloc] init];
+        __weak PLATOAppDelegate *weakSelf = self;
+        self.keymapController.closeHandler = ^{ weakSelf.keyboardReferenceEnabled = NO; [weakSelf applyKeyboardReferencePresentation]; };
+    }
     self.keyboardReferenceEnabled = NO;
 
     self.terminalControllers = [NSMutableArray array];
 
     NSDictionary *defProf = [PLATOProfileManager defaultProfile];
+    if (isHeadlessTest) {
+        NSMutableDictionary *headlessProf = [defProf mutableCopy];
+        headlessProf[@"fullScreen"] = @NO;
+        defProf = headlessProf;
+    }
     [self openNewWindowWithProfile:defProf];
 
-    NSArray<NSString *> *arguments = [[NSProcessInfo processInfo] arguments];
-    NSUInteger testIndex = [arguments indexOfObject:@"--test-script"];
-    if (testIndex != NSNotFound) {
+    if (isHeadlessTest) {
         if (testIndex + 1 >= [arguments count]) {
             NSLog(@"[TEST] ERROR: --test-script requires a file path");
-            [NSApp terminate:nil];
+            exit(1);
         } else {
             self.testRunner = [[PLATOTestRunner alloc] initWithView:self.view scriptPath:arguments[testIndex + 1]];
             [self.testRunner start];
         }
+    } else {
+        [NSApp activateIgnoringOtherApps:YES];
     }
-    [NSApp activateIgnoringOtherApps:YES];
 }
 
 
@@ -1116,7 +1441,7 @@ static void plato_mac_beep(void *context) {
     if (!self.statusMenu) return;
     [self.statusMenu removeAllItems];
 
-    NSMenuItem *headerItem = [[NSMenuItem alloc] initWithTitle:@"PlatoLives 3.5" action:nil keyEquivalent:@""];
+    NSMenuItem *headerItem = [[NSMenuItem alloc] initWithTitle:@"PlatoLives 3.8" action:nil keyEquivalent:@""];
     [headerItem setEnabled:NO];
     [self.statusMenu addItem:headerItem];
 
@@ -1478,7 +1803,31 @@ static void plato_mac_beep(void *context) {
 }
 
 - (void)copyScreen:(id)sender {
+    [self copyTextAction:sender];
+}
+
+- (void)copyScreenImage:(id)sender {
     [self.view copyScreenToPasteboard];
+}
+
+- (void)copyTextAction:(id)sender {
+    if (!self.textBufferController) {
+        self.textBufferController = [[PLATOTextBufferWindowController alloc] init];
+        self.textBufferController.appDelegate = self;
+    }
+    if ([self.textBufferController.window isVisible]) {
+        [self.textBufferController onCopy:sender];
+    } else {
+        [self.textBufferController showAndFocus];
+    }
+}
+
+- (void)showTextBufferWindow:(id)sender {
+    if (!self.textBufferController) {
+        self.textBufferController = [[PLATOTextBufferWindowController alloc] init];
+        self.textBufferController.appDelegate = self;
+    }
+    [self.textBufferController showAndFocus];
 }
 
 - (void)pasteText:(id)sender {
@@ -1543,7 +1892,7 @@ static void plato_mac_beep(void *context) {
 
 - (void)showAbout:(id)sender {
     NSString *version = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
-    if (!version) version = @"3.5";
+    if (!version) version = @"3.8";
     NSDictionary *options = @{
         NSAboutPanelOptionApplicationName: @"PlatoLives",
         NSAboutPanelOptionApplicationVersion: version,
